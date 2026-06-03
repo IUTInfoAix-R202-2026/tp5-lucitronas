@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import javax.sql.DataSource;
 
@@ -64,6 +65,41 @@ public class ImportPassageService {
     // 4. finally : refermer la connexion.
     //
     // Astuce : ouvrez la connexion AVANT le try afin de pouvoir faire rollback dans le catch.
+
+    Connection connexion = null;
+    try {
+      connexion = source.getConnection();
+      connexion.setAutoCommit(false);
+      PreparedStatement ps =
+          connexion.prepareStatement(sqlPassage, Statement.RETURN_GENERATED_KEYS);
+      ps.setString(1, numeroCarre);
+      ps.setString(2, codePoint);
+      ps.setInt(3, numeroPassage);
+      ps.setInt(4, annee);
+      ps.executeUpdate();
+
+      ResultSet rs = ps.getGeneratedKeys();
+      rs.next();
+      passageId = rs.getLong(1);
+
+      for (ObservationAImporter obs : observations) {
+        PreparedStatement psObs = connexion.prepareStatement(sqlObservation);
+        psObs.setLong(1, passageId);
+        psObs.setDouble(2, obs.tempsDebut());
+        psObs.setDouble(3, obs.tempsFin());
+        psObs.setDouble(4, obs.frequenceMediane());
+        psObs.setString(5, obs.codeTaxon());
+        psObs.setDouble(6, obs.probabilite());
+        psObs.executeUpdate();
+      }
+
+      connexion.commit();
+    } catch (SQLException e) {
+      annulerSilencieusement(connexion);
+      throw new DataAccessException("Impossible d'importer le passage", e);
+    } finally {
+      fermerSilencieusement(connexion);
+    }
 
     return passageId;
   }
